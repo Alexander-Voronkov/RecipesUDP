@@ -138,12 +138,6 @@ namespace RecipesServer
             }
         }
 
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            server?.Save();
-            server?.Close();
-        }
-
         private void RecipesListBox_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (RecipesListBox.SelectedIndices.Count > 0)
@@ -151,6 +145,11 @@ namespace RecipesServer
                 Ingredients.Items.Clear();
                 Ingredients.Items.AddRange((RecipesListBox.SelectedItem as Recipe).Ingredients.ToArray());
             }
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            server?.Save();
         }
     }
 
@@ -193,12 +192,20 @@ namespace RecipesServer
             }
         }
 
+        private void CopyBytes(byte[] from, byte[]where,int pos,int count)
+        {
+            int q = 0;
+            for (int i = pos; i < pos+count; i++)
+            {
+                where[q++] = from[i];       
+            }
+        }
+
         public void Save()
         {
             if (recipes.Count > 0)
             {
                 File.WriteAllText("recipes.json", JsonConvert.SerializeObject(recipes, Formatting.Indented));
-
             }
             if (logs.Count > 0)
             {
@@ -218,163 +225,168 @@ namespace RecipesServer
 
         private void Callback(IAsyncResult iar)
         {
-            TempMessage serverstate = iar.AsyncState as TempMessage;
-            UdpClient serv = serverstate.server;
-            IPEndPoint client = null;
-            Form1 f = serverstate.form;
-            serv?.BeginReceive(Callback, new TempMessage() { server = this.server, form = f });
-            byte[] bytes = serv.EndReceive(iar, ref client);
-            string received = Encoding.UTF8.GetString(bytes);
-            var arr = received.Split('\n');
-            if (arr[0] == "DISCONNECT")
+            try
             {
-                for (int i = 0; i < ConnectedClients.Count; i++)
+                TempMessage serverstate = iar.AsyncState as TempMessage;
+                UdpClient serv = serverstate.server;
+                IPEndPoint client = null;
+                Form1 f = serverstate.form;
+                serv?.BeginReceive(Callback, new TempMessage() { server = this.server, form = f });
+                byte[] bytes = serv.EndReceive(iar, ref client);
+                string received = Encoding.UTF8.GetString(bytes);
+                var arr = received.Split('\n');
+                if (arr[0] == "DISCONNECT")
                 {
-                    if (ConnectedClients.ElementAt(i).Value.Address.ToString() == client.Address.ToString() && ConnectedClients.ElementAt(i).Value.Port == client.Port)
+                    for (int i = 0; i < ConnectedClients.Count; i++)
+                    {
+                        if (ConnectedClients.ElementAt(i).Value.Address.ToString() == client.Address.ToString() && ConnectedClients.ElementAt(i).Value.Port == client.Port)
+                        {
+                            if (f.InvokeRequired)
+                            {
+                                f.BeginInvoke(new Action(() =>
+                                {
+                                    (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(ConnectedClients.ElementAt(i).Key);
+                                }));
+                            }
+                            else
+                            {
+                                (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(ConnectedClients.ElementAt(i).Key);
+                            }
+                            ConnectedClients.Remove(ConnectedClients.ElementAt(i).Key);
+                        }
+                    }
+                    return;
+                }
+                if (ConnectedClients.Count >= ConnectedUsersConstraint)
+                {
+                    bytes = Encoding.UTF8.GetBytes("Server is overloaded! Try later...");
+                    serv.Send(bytes, bytes.Length, client);
+                    return;
+                }
+                if (arr.Length == 3 && arr[0] == "SIGNIN")
+                {
+                    if (PenaltedUsers.Where(x => BinaryEquals(x.Key.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0]))) && BinaryEquals(x.Key.Password, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[1])))).Count() > 0)
+                    {
+                        bytes = Encoding.UTF8.GetBytes("Timeout!");
+                        serv.Send(bytes, bytes.Length, client);
+                        return;
+                    }
+
+                    if (Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0])))).Count() == 0)
+                    {
+                        bytes = Encoding.UTF8.GetBytes("Wrong log!");
+                        serv.Send(bytes, bytes.Length, client);
+                        return;
+                    }
+
+                    if (Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0]))) && BinaryEquals(x.Password, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[1])))).Count() == 0)
+                    {
+                        bytes = Encoding.UTF8.GetBytes("Wrong pass!");
+                        serv.Send(bytes, bytes.Length, client);
+                        return;
+                    }
+                    UserLog user = Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0]))) && BinaryEquals(x.Password, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[1])))).ToList()[0];
+                    if (ConnectedClients.ContainsKey(user))
                     {
                         if (f.InvokeRequired)
                         {
-                            f.BeginInvoke(new Action(() =>
-                            {
-                                (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(ConnectedClients.ElementAt(i).Key);
-                            }));
+                            f.BeginInvoke(new Action(() => { (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(user); }));
                         }
                         else
                         {
-                            (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(ConnectedClients.ElementAt(i).Key);
+                            (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(user);
                         }
-                        ConnectedClients.Remove(ConnectedClients.ElementAt(i).Key);
+                        ConnectedClients.Remove(user);
                     }
-                }
-                return;
-            }
-            if (ConnectedClients.Count >= ConnectedUsersConstraint)
-            {
-                bytes = Encoding.UTF8.GetBytes("Server is overloaded! Try later...");
-                serv.Send(bytes, bytes.Length, client);
-                return;
-            }
-            if (arr.Length == 3 && arr[0] == "SIGNIN")
-            {
-                if (PenaltedUsers.Where(x => BinaryEquals(x.Key.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0]))) && BinaryEquals(x.Key.Password, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[1])))).Count() > 0)
-                {
-                    bytes = Encoding.UTF8.GetBytes("Timeout!");
+                    bytes = Encoding.UTF8.GetBytes("Access granted!");
                     serv.Send(bytes, bytes.Length, client);
-                    return;
-                }
-
-                if (Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0])))).Count() == 0)
-                {
-                    bytes = Encoding.UTF8.GetBytes("Wrong log!");
-                    serv.Send(bytes, bytes.Length, client);
-                    return;
-                }
-
-                if (Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0]))) && BinaryEquals(x.Password, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[1])))).Count() == 0)
-                {
-                    bytes = Encoding.UTF8.GetBytes("Wrong pass!");
-                    serv.Send(bytes, bytes.Length, client);
-                    return;
-                }
-                UserLog user = Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0]))) && BinaryEquals(x.Password, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[1])))).ToList()[0];
-                if (ConnectedClients.ContainsKey(user))
-                {
+                    user.timer.Start();
+                    ConnectedClients.Add(user, client);
                     if (f.InvokeRequired)
                     {
-                        f.BeginInvoke(new Action(() => { (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(user); }));
+                        f.BeginInvoke(new Action(() => { (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Add(user); }));
                     }
                     else
                     {
-                        (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Remove(user);
+                        (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Add(user);
                     }
-                    ConnectedClients.Remove(user);
                 }
-                bytes = Encoding.UTF8.GetBytes("Access granted!");
-                serv.Send(bytes, bytes.Length, client);
-                user.timer.Start();
-                ConnectedClients.Add(user, client);
-                if (f.InvokeRequired)
+                else if (arr.Length == 3 && arr[0] == "SIGNUP")
                 {
-                    f.BeginInvoke(new Action(() => { (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Add(user); }));
-                }
-                else
-                {
-                    (f.Controls.Find("Connected_users", false)[0] as ListBox).Items.Add(user);
-                }
-            }
-            else if (arr.Length == 3 && arr[0] == "SIGNUP")
-            {
-                if (Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0])))).Count() == 0)
-                {
-                    Logs.Add(new UserLog(client, arr[0], arr[1]));
-                    bytes = Encoding.UTF8.GetBytes("Successfully added!");
-                    serv.Send(bytes, bytes.Length, client);
-                    return;
-                }
-                else
-                {
-                    bytes = Encoding.UTF8.GetBytes("Such user already exists! Try another login!");
-                    serv.Send(bytes, bytes.Length, client);
-                    return;
-                }
-            }
-            else if (arr.Length == 2 && arr[0] == "RECIPE")
-            {
-                if (ConnectedClients.ContainsValue(client))
-                {
-                    StringBuilder q = new StringBuilder();
-                    if (Recipes.Where(x => x.RecipeName == arr[1]).Count() > 0)
+                    if (Logs.Where(x => BinaryEquals(x.Login, new MD5CryptoServiceProvider().ComputeHash(Encoding.UTF8.GetBytes(arr[0])))).Count() == 0)
                     {
-                        Recipe r = Recipes.Where(x => x.RecipeName == arr[1]).ToList()[0];
-                        q.Append($"{r.RecipeName}\n");
-                        foreach (var item in r.Ingredients)
+                        Logs.Add(new UserLog(client, arr[0], arr[1]));
+                        bytes = Encoding.UTF8.GetBytes("Successfully added!");
+                        serv.Send(bytes, bytes.Length, client);
+                        return;
+                    }
+                    else
+                    {
+                        bytes = Encoding.UTF8.GetBytes("Such user already exists! Try another login!");
+                        serv.Send(bytes, bytes.Length, client);
+                        return;
+                    }
+                }
+                else if (arr.Length == 2 && arr[0] == "RECIPE")
+                {
+                    if (ConnectedClients.ContainsValue(client))
+                    {
+                        StringBuilder q = new StringBuilder();
+                        if (Recipes.Where(x => x.RecipeName == arr[1]).Count() > 0)
                         {
-                            q.Append($"{item}\n");
-                        }
-                        int count = 0;
-                        for (int i = 2; i < 9; i++)
-                        {
-                            if (r.Img.Length % i == 0)
+                            Recipe r = Recipes.Where(x => x.RecipeName == arr[1]).ToList()[0];
+                            q.Append($"{r.RecipeName}\n");
+                            foreach (var item in r.Ingredients)
                             {
-                                count = i;
+                                q.Append($"{item}\n");
                             }
-                        }
-                        string[] sendimage = new string[count];
-                        int amount = (r.Img.Length / count);
-                        for (int i = 0; i < count; i++)
-                        {
-                            sendimage[i] = r.Img.Substring(r.Img.Length - (i + 1 * amount) - 1);
-                        }
-                        bytes = Encoding.UTF8.GetBytes(q.ToString()+$"{count}");
-                        serv.Send(bytes, bytes.Length, client);
-                        Thread.Sleep(1000);
-                        for (int i = 0; i < sendimage.Length; i++)
-                        {
-                            bytes = Convert.FromBase64String(sendimage[i]);
+                            int count = 0;
+                            for (int i = 2; i < 9; i++)
+                            {
+                                if(r.Img.Length%i==0&&r.Img.Length/i<=60000)
+                                {
+                                    count = i;
+                                    break;
+                                }
+                            }
+                            q.Append($"{count}");
+                            bytes = Encoding.UTF8.GetBytes(q.ToString());
                             serv.Send(bytes, bytes.Length, client);
-                            Thread.Sleep(1000);
+                            int pos = 0;
+                            for (int i = 0; i < count; i++)
+                            {
+                                Thread.Sleep(200);
+                                byte[] temp=new byte[r.Img.Length/count];
+                                CopyBytes(r.Img,temp,pos,r.Img.Length/count);
+                                pos += r.Img.Length / count;
+                                serv.Send(temp, temp.Length, client);
+                            }
+                            return;
                         }
-                        return;
+                        else
+                        {
+                            bytes = Encoding.UTF8.GetBytes("No such recipes found!");
+                            serv.Send(bytes, bytes.Length, client);
+                            return;
+                        }
                     }
                     else
                     {
-                        bytes = Encoding.UTF8.GetBytes("No such recipes found!");
+                        bytes = Encoding.UTF8.GetBytes("Sign in if you have an account! Otherwise sign up!");
                         serv.Send(bytes, bytes.Length, client);
                         return;
                     }
                 }
                 else
                 {
-                    bytes = Encoding.UTF8.GetBytes("Sign in if you have an account! Otherwise sign up!");
+                    bytes = Encoding.UTF8.GetBytes("Unknown command!");
                     serv.Send(bytes, bytes.Length, client);
                     return;
                 }
             }
-            else
+            catch(Exception ex)
             {
-                bytes = Encoding.UTF8.GetBytes("Unknown command!");
-                serv.Send(bytes, bytes.Length, client);
-                return;
+                MessageBox.Show(ex.Message);
             }
         }
 
@@ -416,4 +428,5 @@ namespace RecipesServer
         public Form1 form { get; set; }
         public UdpClient server { get; set; }
     }
+
 }

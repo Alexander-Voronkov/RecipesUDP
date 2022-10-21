@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.ComTypes;
@@ -52,7 +53,7 @@ namespace RecipesServer
                 var img = Image.FromFile(path);
                 img.Save(m, img.RawFormat);
                 byte[] data = m.ToArray();
-                recipe = new Recipe(RecipeNameTB.Text, Convert.ToBase64String(data), IngredientList.Items.Cast<Ingredient>().ToArray());
+                recipe = new Recipe(RecipeNameTB.Text, data, IngredientList.Items.Cast<Ingredient>().ToArray());
             }
             this.Close();
         }

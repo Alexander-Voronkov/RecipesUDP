@@ -57,7 +57,7 @@ namespace RecipesClient
             {
                 Ingridients.Items.Clear();
                 Ingridients.Items.AddRange((Recipes.SelectedItem as Recipe).Ingredients.ToArray());
-                using (var ms = new MemoryStream(Convert.FromBase64String((Recipes.SelectedItem as Recipe).Img)))
+                using (var ms = new MemoryStream((Recipes.SelectedItem as Recipe).Img))
                 {
                     RecipeImage.Image = Image.FromStream(ms);
                 }
@@ -66,9 +66,13 @@ namespace RecipesClient
 
         private void MainClient_FormClosing(object sender, FormClosingEventArgs e)
         {
-            byte[] bytes = Encoding.UTF8.GetBytes("DISCONNECT");
-            client?.Client.Send(bytes,bytes.Length,serverEP);
-            client?.Close();
+            try
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes("DISCONNECT");
+                client?.Client.Send(bytes, bytes.Length, serverEP);
+                client?.Close();
+            }
+            catch { }
         }
     }
 
@@ -95,14 +99,22 @@ namespace RecipesClient
             client.Send(query, query.Length, message.server);
             IPEndPoint ep = null;
             string text = String.Empty;
-            StringBuilder image = new StringBuilder();
             query = client.Receive(ref ep);
             text = Encoding.UTF8.GetString(query);
             var textmessage = text.Split('\n');
+            List<byte[]> image = new List<byte[]>();
             for (int i = 0; i < int.Parse(textmessage[textmessage.Length-1]); i++)
             {
-                query = client.Receive(ref ep);
-                image.Append(Convert.ToBase64String(query));
+                image.Add(client.Receive(ref ep));
+            }
+            byte[] img = new byte[image[0].Length * int.Parse(textmessage[textmessage.Length - 1])];
+            int co = 0;
+            for (int i = 0; i < image.Count; i++)
+            {
+                for (int j = 0; j < image[i].Length; j++)
+                {
+                    img[co++] = image[i][j];
+                }
             }
             if (textmessage.Length <= 1)
             {
@@ -115,7 +127,7 @@ namespace RecipesClient
                 ingredients.Add(new Ingredient(q[0], float.Parse(q[1])));
             }
             return new Recipe(textmessage[0],
-                image.ToString(),
+                img,
                 ingredients.ToArray());
         }
 

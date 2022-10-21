@@ -21,9 +21,9 @@ namespace DllClass
         private string Recipe_Name = "";
 
         [JsonProperty("recipeimg")]
-        private string Image;
+        private byte[] Image;
         [JsonIgnore]
-        public string Img { get { return Image; } }
+        public byte[] Img { get { return Image; } }
         [JsonIgnore]
         public string RecipeName
         {
@@ -32,13 +32,13 @@ namespace DllClass
 
         [JsonProperty("ingredients")]
         public List<Ingredient> Ingredients { get; }
-        public Recipe(string name, string base64img, params Ingredient[] ingredients)
+        public Recipe(string name, byte[] img, params Ingredient[] ingredients)
         {
             if(ingredients.Length>0)
                 Ingredients = ingredients.Distinct().ToList();
             else
                 Ingredients = new List<Ingredient>();
-            Image = base64img;
+            Image = img;
             Recipe_Name = name;
         }
         public Recipe()
