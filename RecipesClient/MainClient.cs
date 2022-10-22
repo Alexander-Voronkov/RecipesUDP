@@ -66,13 +66,8 @@ namespace RecipesClient
 
         private void MainClient_FormClosing(object sender, FormClosingEventArgs e)
         {
-            try
-            {
-                byte[] bytes = Encoding.UTF8.GetBytes("DISCONNECT");
-                client?.Client.Send(bytes, bytes.Length, serverEP);
-                client?.Close();
-            }
-            catch { }
+            byte[] bytes = Encoding.UTF8.GetBytes("DISCONNECT");
+            client.Client.Send(bytes, bytes.Length, serverEP);
         }
     }
 
@@ -94,46 +89,50 @@ namespace RecipesClient
 
         public Recipe AskForRecipe(object mess)
         {
-            ServerPoint message = mess as ServerPoint;
-            byte[] query = Encoding.UTF8.GetBytes($"RECIPE\n{message.query}");
-            client.Send(query, query.Length, message.server);
-            IPEndPoint ep = null;
-            string text = String.Empty;
-            query = client.Receive(ref ep);
-            text = Encoding.UTF8.GetString(query);
-            var textmessage = text.Split('\n');
-            List<byte[]> image = new List<byte[]>();
-            for (int i = 0; i < int.Parse(textmessage[textmessage.Length-1]); i++)
+            try
             {
-                image.Add(client.Receive(ref ep));
-            }
-            byte[] img = new byte[image[0].Length * int.Parse(textmessage[textmessage.Length - 1])];
-            int co = 0;
-            for (int i = 0; i < image.Count; i++)
-            {
-                for (int j = 0; j < image[i].Length; j++)
+                ServerPoint message = mess as ServerPoint;
+                byte[] query = Encoding.UTF8.GetBytes($"RECIPE\n{message.query}");
+                client.Send(query, query.Length, message.server);
+                IPEndPoint ep = null;
+                string text = String.Empty;
+                query = client.Receive(ref ep);
+                text = Encoding.UTF8.GetString(query);
+                var textmessage = text.Split('\n');
+                if (textmessage.Length <= 1)
                 {
-                    img[co++] = image[i][j];
+                    return null;
                 }
+                List<byte[]> image = new List<byte[]>();
+                for (int i = 0; i < int.Parse(textmessage[textmessage.Length - 1]); i++)
+                {
+                    image.Add(client.Receive(ref ep));
+                }
+                byte[] img = new byte[image[0].Length * int.Parse(textmessage[textmessage.Length - 1])];
+                int co = 0;
+                for (int i = 0; i < image.Count; i++)
+                {
+                    for (int j = 0; j < image[i].Length; j++)
+                    {
+                        img[co++] = image[i][j];
+                    }
+                }
+                List<Ingredient> ingredients = new List<Ingredient>();
+                for (int i = 1; i < textmessage.Length - 1; i++)
+                {
+                    var q = textmessage[i].Split(':');
+                    ingredients.Add(new Ingredient(q[0], float.Parse(q[1])));
+                }
+                return new Recipe(textmessage[0],
+                    img,
+                    ingredients.ToArray());
             }
-            if (textmessage.Length <= 1)
-            {
-                return null;
-            }
-            List<Ingredient> ingredients = new List<Ingredient>();
-            for (int i = 1; i < textmessage.Length-1; i++)
-            {
-                var q = textmessage[i].Split(':');
-                ingredients.Add(new Ingredient(q[0], float.Parse(q[1])));
-            }
-            return new Recipe(textmessage[0],
-                img,
-                ingredients.ToArray());
+            catch { return null; }
         }
 
         public void Close()
         {
-            Client?.Close();
+            Client.Close();
         }
     }
 

@@ -341,7 +341,7 @@ namespace RecipesServer
                                 q.Append($"{item}\n");
                             }
                             int count = 0;
-                            for (int i = 2; i < 9; i++)
+                            for (int i = 2; i < 100; i++)
                             {
                                 if(r.Img.Length%i==0&&r.Img.Length/i<=60000)
                                 {
